@@ -2,11 +2,13 @@
 
 use base64::{Engine as _, engine::general_purpose};
 use clap::Parser;
+use lr0::{get_parsing_automaton, print_closures};
 use std::fs;
 use std::io::{self, Read};
 
 mod args;
 mod grammar;
+mod lr0;
 use args::{Args, decode_grammar};
 
 fn main() {
@@ -15,6 +17,9 @@ fn main() {
     match decode_grammar(args) {
         Ok(grammar) => {
             println!("Decoded Grammar:\n{}", grammar);
+            // print_closures(&grammar);
+            let automaton = get_parsing_automaton(&grammar);
+            println!("LR(0) Parsing Automaton:\n{}", automaton);
         }
         Err(err) => {
             eprintln!("Error decoding grammar: {:?}", err);

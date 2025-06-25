@@ -1,4 +1,4 @@
-S → CAb | ε
-A → BSA | c
-B → ASc | a | ε
-C → AB | Ba
+S -> C A b | S a C | .
+A -> B S A | c .
+B -> A S c | a | .
+C -> A B | B a .
