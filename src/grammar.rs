@@ -151,6 +151,7 @@ impl Grammar {
         parsing_table: &Vec<HashMap<char, Vec<Action>>>,
         sorted_terms: &Vec<char>,
         sorted_non_terms: &Vec<char>,
+        caption: Option<&str>,
     ) -> String {
         let mut rv = String::new();
 
@@ -215,19 +216,29 @@ impl Grammar {
 
         rv.push_str("\\bottomrule\n");
         rv.push_str("\\end{tabular}\n");
-        rv.push_str("\\caption{Tabella LR(0) senza pruning}");
+        if let Some(caption) = caption {
+            rv.push_str(format!("\\caption{{{}}}", caption).as_str());
+        }
         rv.push_str("\\end{table}");
         rv
     }
 
     fn generate_first_follow_table_latex(
         &self,
-        parsing_table: &Vec<HashMap<char, Vec<Action>>>,
+        first_follow_set: Option<&HashMap<char, FirstFollowSet>>,
         sorted_terms: &Vec<char>,
         sorted_non_terms: &Vec<char>,
     ) -> String {
         let mut rv = String::new();
-        let first_follow_set = self.get_first_follow_table();
+
+        let first_follow_set_owned;
+        let first_follow_set = match first_follow_set {
+            Some(s) => s,
+            None => {
+                first_follow_set_owned = self.get_first_follow_table();
+                &first_follow_set_owned
+            }
+        };
 
         rv.push_str("\\begin{table}[H]");
         rv.push_str("\\centering");
@@ -290,7 +301,10 @@ impl Grammar {
 
     pub fn generate_latex_string(&self) -> String {
         /* ######################### Common ######################### */
-        let parsing_table = self.get_lr0_parsing_table();
+        let first_follow_set = self.get_first_follow_table();
+        let lr0_parsing_table = self.get_lr0_parsing_table();
+        let slr1_parsing_table =
+            self.get_slr1_parsing_table(Some(&lr0_parsing_table), Some(&first_follow_set));
 
         let mut sorted_terms: Vec<char> = self.terms.iter().cloned().collect();
         sorted_terms.sort();
@@ -300,25 +314,35 @@ impl Grammar {
             self.productions.iter().map(|prod| prod.driver).collect();
         sorted_non_terms.dedup();
 
-        /* ######################### Parsing table ######################### */
-        let parsing_table_string = Self::generate_parsing_table_latex(
+        /* ######################### lr0 Parsing table ######################### */
+        let lr0_parsing_table_string = Self::generate_parsing_table_latex(
             self,
-            &parsing_table,
+            &lr0_parsing_table,
             &sorted_terms,
             &sorted_non_terms,
+            Some("Tabella di parsing LR(0)"),
+        );
+
+        /* ######################### slr1 Parsing table ######################### */
+        let slr1_parsing_table_string = Self::generate_parsing_table_latex(
+            self,
+            &slr1_parsing_table,
+            &sorted_terms,
+            &sorted_non_terms,
+            Some("Tabella di parsing SLR(1)"),
         );
 
         /* ######################### First follow table ######################### */
         let first_follow_table_string = Self::generate_first_follow_table_latex(
             self,
-            &parsing_table,
+            Some(&first_follow_set),
             &sorted_terms,
             &sorted_non_terms,
         );
 
         format!(
-            "%Parsing table\n{} \n\n %First-follow set\n{}",
-            parsing_table_string, first_follow_table_string
+            "%Lr0 parsing table\n{} \n\n %Slr1 parsing table\n{} \n\n %First-follow set\n{}",
+            lr0_parsing_table_string, slr1_parsing_table_string, first_follow_table_string
         )
     }
 
@@ -381,6 +405,41 @@ impl Grammar {
         }
 
         rv
+    }
+
+    pub fn get_slr1_parsing_table(
+        &self,
+        parsing_table: Option<&Vec<HashMap<char, Vec<Action>>>>,
+        first_follow_set: Option<&HashMap<char, FirstFollowSet>>,
+    ) -> Vec<HashMap<char, Vec<Action>>> {
+        let mut parsing_table = match parsing_table {
+            Some(t) => t.clone(),
+            None => self.get_lr0_parsing_table(),
+        };
+
+        let first_follow_owned;
+        let first_follow_set = match first_follow_set {
+            Some(ref s) => s,
+            None => {
+                first_follow_owned = self.get_first_follow_table();
+                &first_follow_owned
+            }
+        };
+
+        for (node_index, row) in parsing_table.iter_mut().enumerate() {
+            for (by_char, actions) in row.iter_mut() {
+                actions.retain(|a| match a {
+                    Action::Reduce(reduce) => first_follow_set
+                        .get(&self.productions[*reduce].driver)
+                        .unwrap()
+                        .follow
+                        .contains(by_char),
+                    _ => true,
+                });
+            }
+        }
+
+        parsing_table
     }
 
     /// Creates a table containing for each non terminal
@@ -637,6 +696,7 @@ impl Grammar {
     }
 }
 
+#[derive(Clone)]
 pub enum Action {
     Shift(usize),
     Reduce(usize),
