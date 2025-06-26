@@ -40,11 +40,11 @@ pub struct Args {
     #[arg(long = "base-64", group = "input")]
     pub base64: Option<String>,
 
-    /// Flag per generare output in formato LaTeX
+    /// Generate LaTeX souce code
     #[arg(long, default_value_t = false, group = "output")]
     pub latex: bool,
 
-    /// Flag per generare output in formato DOT
+    /// Generate DOT notation for lr0 automaton
     #[arg(long, default_value_t = false,  group = "output")]
     pub dot: bool,
 
@@ -72,6 +72,7 @@ pub struct Args {
     #[arg(long, default_value_t = false, group="latex-format")]
     first_follow_set: bool,
 
+    /// Include all of the possible latex format options
     #[arg(long, default_value_t = false, group="latex-format")]
     all: bool,
 
