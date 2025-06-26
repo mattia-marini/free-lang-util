@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use petgraph::adj::NodeIndex;
 use petgraph::algo::{condensation, toposort};
+use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::{Direction, Graph};
 
@@ -380,11 +380,14 @@ impl Grammar {
             }
         }
 
-        let mut first_graph = Graph::<char, ()>::new();
+        let mut first_graph = Graph::<(char, HashSet<char>), ()>::new();
         let mut node_indices = HashMap::new();
 
         for non_term in &self.non_terms {
-            let idx = first_graph.add_node(*non_term);
+            let idx = first_graph.add_node((
+                *non_term,
+                first_follow_table.get(non_term).unwrap().first.clone(),
+            ));
             node_indices.insert(*non_term, idx);
         }
 
@@ -402,83 +405,96 @@ impl Grammar {
             }
         }
 
-        println!("First Graph DOT:\n{}", get_dot_from_petgraph(&first_graph));
+        let first_condensation_graph = Self::propagate_referece_graph(&mut first_graph);
 
-        let condensation_graph = condensation(first_graph, true);
-
-        //REMOVE
-        let new_graph = condensation_graph.map(
-            |idx, payload| {
-                payload
-                    .iter()
-                    .map(|e| e.to_string())
-                    .collect::<Vec<String>>()
-                    .join(",")
-            },
-            |idx, payload| *payload,
-        );
-        println!(
-            "Condensation graph DOT:\n{}",
-            get_dot_from_petgraph(&new_graph)
-        );
-        //REMOVE
-
-        for condensed_nodes in condensation_graph.node_weights() {
-            let mut node_symbols = HashSet::new();
-            for symbol in condensed_nodes {
-                for first in first_follow_table.get(symbol).unwrap().first.iter() {
-                    node_symbols.insert(*first);
-                }
-            }
-            for symbol in condensed_nodes {
-                let curr_symbol_first_set = &mut first_follow_table.get_mut(symbol).unwrap().first;
-                for first in &node_symbols {
-                    curr_symbol_first_set.insert(*first);
-                }
-            }
-        }
-
-        let topological_order =
-            toposort(&condensation_graph, None).expect("Failed to compute topological order");
-        let wheights: Vec<String> = topological_order
-            .iter()
-            .map(|e| condensation_graph.node_weight(*e).unwrap())
-            .map(|e| {
-                e.iter()
-                    .map(|c| c.to_string())
-                    .collect::<Vec<String>>()
-                    .join(",")
-            })
-            .collect();
-
-        println!("Topological order: {:?}", wheights);
-        let mut topological_sort_iter = topological_order.iter().rev();
-
-        let mut topological_node_position = HashMap::new();
-        for (pos, node_index) in topological_order.iter().enumerate() {
-            topological_node_position.insert(*node_index, pos);
-        }
-
-        for node_index in topological_sort_iter.rev() {
-            for edge in condensation_graph.edges_directed(*node_index, Direction::Outgoing) {
-                let node_to_idx = edge.target();
-
-                let new_firsts = first_follow_table
-                    .get(&condensation_graph.node_weight(node_to_idx).unwrap()[0])
-                    .unwrap()
-                    .first
-                    .clone();
-
-                for symbol in condensation_graph.node_weight(*node_index).unwrap() {
-                    let curr_symbol_first_set = first_follow_table.get_mut(&symbol).unwrap();
-                    for first in new_firsts.iter() {
-                        curr_symbol_first_set.first.insert(*first);
-                    }
+        for condensed_node in first_condensation_graph.node_indices() {
+            let (non_terms, firsts) = first_condensation_graph
+                .node_weight(condensed_node)
+                .unwrap();
+            for non_term in non_terms.iter() {
+                if let Some(set) = first_follow_table.get_mut(non_term) {
+                    set.first.extend(firsts.iter().cloned());
                 }
             }
         }
 
         first_follow_table
+    }
+
+    /// Given a graph representing the how firsts-follows depend on each other, it return a
+    /// condensation graph where each component contains the set of non-terminals that circularly
+    /// depend on each other and such that no further propagation could be done (i.e. each non
+    /// terminal has inherited every first-follow it can inherit)
+    fn propagate_referece_graph(
+        graph: &mut Graph<(char, HashSet<char>), ()>,
+    ) -> Graph<(HashSet<char>, HashSet<char>), ()> {
+        let mut condensation_graph = condensation(graph.clone(), true);
+
+        let mut first_by_condensation_node: HashMap<NodeIndex, HashSet<char>> = HashMap::new();
+
+        for condensed_node_idx in condensation_graph.node_indices() {
+            let condensed_nodes = condensation_graph.node_weight(condensed_node_idx).unwrap();
+            first_by_condensation_node.insert(condensed_node_idx, HashSet::new());
+
+            for node in condensed_nodes.iter() {
+                first_by_condensation_node
+                    .get_mut(&condensed_node_idx)
+                    .unwrap()
+                    .extend(node.1.iter().cloned());
+            }
+        }
+
+        // Condensation graph has now a list of the condensed nodes and a list of first
+        // (condensed_nodes, firsts)
+        let mut condensation_graph = condensation_graph.map(
+            |idx, wheight| {
+                (
+                    wheight
+                        .iter()
+                        .cloned()
+                        .map(|(c, _)| c)
+                        .collect::<HashSet<char>>(),
+                    first_by_condensation_node.remove(&idx).unwrap(),
+                )
+            },
+            |idx, wheight| *wheight,
+        );
+
+        let topological_order =
+            toposort(&condensation_graph, None).expect("Failed to compute topological order");
+        // let wheights: Vec<String> = topological_order
+        //     .iter()
+        //     .map(|e| condensation_graph.node_weight(*e).unwrap())
+        //     .map(|e| {
+        //         e.iter()
+        //             .map(|c| c.to_string())
+        //             .collect::<Vec<String>>()
+        //             .join(",")
+        //     })
+        //     .collect();
+        //
+        // println!("Topological order: {:?}", wheights);
+
+        for node_index in topological_order.iter().rev() {
+            let mut new_firsts = HashSet::new();
+            for edge in condensation_graph.edges_directed(*node_index, Direction::Outgoing) {
+                let node_to_idx = edge.target();
+
+                let new_firsts_from_curr_edge = condensation_graph
+                    .node_weight(node_to_idx)
+                    .unwrap()
+                    .1
+                    .clone();
+                new_firsts.extend(new_firsts_from_curr_edge);
+            }
+            condensation_graph
+                .node_weight_mut(*node_index)
+                .unwrap()
+                .1
+                .extend(new_firsts.clone())
+        }
+
+        condensation_graph
     }
 }
 
