@@ -146,18 +146,16 @@ impl Grammar {
             .collect()
     }
 
-    pub fn generate_latex_string(&self) -> String {
+    fn generate_parsing_table_latex(
+        &self,
+        parsing_table: &Vec<HashMap<char, Vec<Action>>>,
+        sorted_terms: &Vec<char>,
+        sorted_non_terms: &Vec<char>,
+    ) -> String {
         let mut rv = String::new();
-        let parsing_table = self.get_lr0_parsing_table();
 
-        let mut sorted_terms: Vec<char> = self.terms.iter().cloned().collect();
-        sorted_terms.sort();
-        sorted_terms.push('$');
-
-        let mut sorted_non_terms: Vec<char> =
-            self.productions.iter().map(|prod| prod.driver).collect();
-        sorted_non_terms.dedup();
-
+        rv.push_str("\\begin{table}[H]");
+        rv.push_str("\\centering");
         rv.push_str(
             format!(
                 "\\begin{{tabular}}{{{}}}\n",
@@ -217,11 +215,22 @@ impl Grammar {
 
         rv.push_str("\\bottomrule\n");
         rv.push_str("\\end{tabular}\n");
+        rv.push_str("\\caption{Tabella LR(0) senza pruning}");
+        rv.push_str("\\end{table}");
+        rv
+    }
 
-        rv.push_str("\n\n");
-
+    fn generate_first_follow_table_latex(
+        &self,
+        parsing_table: &Vec<HashMap<char, Vec<Action>>>,
+        sorted_terms: &Vec<char>,
+        sorted_non_terms: &Vec<char>,
+    ) -> String {
+        let mut rv = String::new();
         let first_follow_set = self.get_first_follow_table();
 
+        rv.push_str("\\begin{table}[H]");
+        rv.push_str("\\centering");
         rv.push_str("\\begin{tabular}{cccc}\n");
         rv.push_str("\\toprule\n");
         rv.push_str("Symbol & First\\-set & Follow\\-set & Nullable\\\\\n");
@@ -275,8 +284,42 @@ impl Grammar {
         }
         rv.push_str("\\bottomrule\n");
         rv.push_str("\\end{tabular}\n");
-
+        rv.push_str("\\end{table}");
         rv
+    }
+
+    pub fn generate_latex_string(&self) -> String {
+        /* ######################### Common ######################### */
+        let parsing_table = self.get_lr0_parsing_table();
+
+        let mut sorted_terms: Vec<char> = self.terms.iter().cloned().collect();
+        sorted_terms.sort();
+        sorted_terms.push('$');
+
+        let mut sorted_non_terms: Vec<char> =
+            self.productions.iter().map(|prod| prod.driver).collect();
+        sorted_non_terms.dedup();
+
+        /* ######################### Parsing table ######################### */
+        let parsing_table_string = Self::generate_parsing_table_latex(
+            self,
+            &parsing_table,
+            &sorted_terms,
+            &sorted_non_terms,
+        );
+
+        /* ######################### First follow table ######################### */
+        let first_follow_table_string = Self::generate_first_follow_table_latex(
+            self,
+            &parsing_table,
+            &sorted_terms,
+            &sorted_non_terms,
+        );
+
+        format!(
+            "%Parsing table\n{} \n\n %First-follow set\n{}",
+            parsing_table_string, first_follow_table_string
+        )
     }
 
     pub fn get_lr0_parsing_table(&self) -> Vec<HashMap<char, Vec<Action>>> {
@@ -604,10 +647,10 @@ pub enum Action {
 impl std::fmt::Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Action::Shift(to) => write!(f, "S{}", to),
-            Action::Reduce(prod_index) => write!(f, "R{}", prod_index),
+            Action::Shift(to) => write!(f, "s{}", to),
+            Action::Reduce(prod_index) => write!(f, "r{}", prod_index),
             Action::Goto(to) => write!(f, "{}", to),
-            Action::Acc => write!(f, "ACC"),
+            Action::Acc => write!(f, "acc"),
         }
     }
 }
