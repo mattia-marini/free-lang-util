@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 
 use petgraph::algo::{condensation, toposort};
@@ -223,22 +224,42 @@ impl Grammar {
 
         rv.push_str("\\begin{tabular}{cccc}\n");
         rv.push_str("\\toprule\n");
-        rv.push_str("Symbol & First-set & Follow-set & Nullable\\\\\n");
+        rv.push_str("Symbol & First\\-set & Follow\\-set & Nullable\\\\\n");
         rv.push_str("\\midrule\n");
         for non_term in sorted_non_terms.iter() {
             if let Some(set) = first_follow_set.get(non_term) {
-                let first_set_str = set
-                    .first
+                let espace_latex_chars = |e: char| {
+                    if e == '$' {
+                        "\\$".to_string()
+                    } else {
+                        e.to_string()
+                    }
+                };
+
+                let mut first_set = vec![];
+                for c in sorted_terms.iter() {
+                    if let Some(first) = set.first.get(c) {
+                        first_set.push(*first);
+                    }
+                }
+
+                let mut follow_set = vec![];
+                for c in sorted_terms.iter() {
+                    if let Some(follow) = set.follow.get(c) {
+                        follow_set.push(*follow);
+                    }
+                }
+
+                let first_set_str = first_set
                     .iter()
                     .cloned()
-                    .map(|e| e.to_string())
+                    .map(espace_latex_chars)
                     .collect::<Vec<String>>()
                     .join(",");
-                let follow_set_str: String = set
-                    .follow
+                let follow_set_str: String = follow_set
                     .iter()
                     .cloned()
-                    .map(|e| e.to_string())
+                    .map(espace_latex_chars)
                     .collect::<Vec<String>>()
                     .join(",");
 
@@ -319,13 +340,17 @@ impl Grammar {
         rv
     }
 
+    /// Creates a table containing for each non terminal
+    /// 1) the first set
+    /// 2) the follow set
+    /// 3) whether the terminal is nullable or not
     pub fn get_first_follow_table(&self) -> HashMap<char, FirstFollowSet> {
         let mut first_follow_table = HashMap::new();
         for non_term in &self.non_terms {
             first_follow_table.insert(*non_term, FirstFollowSet::new());
         }
 
-        // Nullables
+        /* ######################### NULLABLES ######################### */
         let mut nullables = HashSet::new();
         let mut new_nullables_count = 0;
 
@@ -357,7 +382,7 @@ impl Grammar {
             }
         }
 
-        //Firsts
+        /* ######################### FIRST ######################### */
         let mut productions_by_driver: HashMap<char, Vec<&Production>> = HashMap::new();
         for production in &self.productions {
             if !productions_by_driver.contains_key(&production.driver) {
@@ -381,21 +406,21 @@ impl Grammar {
         }
 
         let mut first_graph = Graph::<(char, HashSet<char>), ()>::new();
-        let mut node_indices = HashMap::new();
+        let mut first_graph_node_indices = HashMap::new();
 
         for non_term in &self.non_terms {
             let idx = first_graph.add_node((
                 *non_term,
                 first_follow_table.get(non_term).unwrap().first.clone(),
             ));
-            node_indices.insert(*non_term, idx);
+            first_graph_node_indices.insert(*non_term, idx);
         }
 
         for prod in &self.productions {
             for symbol in &prod.body {
                 if symbol.is_uppercase() {
-                    let node_from_idx = node_indices.get(&prod.driver).unwrap();
-                    let node_to_idx = node_indices.get(&symbol).unwrap();
+                    let node_from_idx = first_graph_node_indices.get(&prod.driver).unwrap();
+                    let node_to_idx = first_graph_node_indices.get(&symbol).unwrap();
                     first_graph.add_edge(*node_from_idx, *node_to_idx, ());
                 }
 
@@ -405,15 +430,86 @@ impl Grammar {
             }
         }
 
-        let first_condensation_graph = Self::propagate_referece_graph(&mut first_graph);
-
-        for condensed_node in first_condensation_graph.node_indices() {
-            let (non_terms, firsts) = first_condensation_graph
-                .node_weight(condensed_node)
-                .unwrap();
+        let first_condensation_graph = Self::propagate_referece_graph(&first_graph);
+        for (non_terms, firsts) in first_condensation_graph.node_weights() {
             for non_term in non_terms.iter() {
                 if let Some(set) = first_follow_table.get_mut(non_term) {
                     set.first.extend(firsts.iter().cloned());
+                }
+            }
+        }
+
+        /* ######################### FOLLOWS ######################### */
+        let mut follow_graph = Graph::<(char, HashSet<char>), ()>::new();
+        let mut follow_graph_node_indices = HashMap::new();
+
+        for non_term in &self.non_terms {
+            let idx = follow_graph.add_node((*non_term, HashSet::new()));
+            follow_graph_node_indices.insert(*non_term, idx);
+        }
+
+        for prod in self.productions.iter() {
+            if prod.body.len() == 0 {
+                continue;
+            }
+            for i in 0..prod.body.len() {
+                let l_char = prod.body[i];
+                if l_char.is_lowercase() {
+                    continue;
+                }
+
+                let mut new_follows: HashSet<char> = HashSet::new();
+
+                let mut body_nullable = true;
+                for j in i + 1..prod.body.len() {
+                    let r_char = prod.body[j];
+                    if r_char.is_uppercase() {
+                        new_follows.extend(
+                            first_follow_table
+                                .get(&r_char)
+                                .unwrap()
+                                .first
+                                .iter()
+                                .clone(),
+                        );
+                    } else {
+                        new_follows.insert(r_char);
+                    }
+
+                    if !nullables.contains(&r_char) {
+                        body_nullable = false;
+                        break;
+                    }
+                }
+
+                if body_nullable {
+                    let node_from = follow_graph_node_indices.get(&l_char).unwrap();
+                    let node_to = follow_graph_node_indices.get(&prod.driver).unwrap();
+                    follow_graph.add_edge(*node_from, *node_to, ());
+                }
+
+                follow_graph
+                    .node_weight_mut(*follow_graph_node_indices.get(&l_char).unwrap())
+                    .unwrap()
+                    .1
+                    .extend(new_follows.into_iter());
+            }
+        }
+
+        follow_graph
+            .node_weight_mut(
+                *follow_graph_node_indices
+                    .get(&self.productions[0].driver)
+                    .unwrap(),
+            )
+            .unwrap()
+            .1
+            .insert('$');
+        let follow_condensation_graph = Self::propagate_referece_graph(&follow_graph);
+        for (symbols, follows) in follow_condensation_graph.node_weights() {
+            for non_term in symbols.iter() {
+                if let Some(set) = first_follow_table.get_mut(non_term) {
+                    set.follow.extend(follows.iter().cloned());
                 }
             }
         }
@@ -426,7 +522,7 @@ impl Grammar {
     /// depend on each other and such that no further propagation could be done (i.e. each non
     /// terminal has inherited every first-follow it can inherit)
     fn propagate_referece_graph(
-        graph: &mut Graph<(char, HashSet<char>), ()>,
+        graph: &Graph<(char, HashSet<char>), ()>,
     ) -> Graph<(HashSet<char>, HashSet<char>), ()> {
         let mut condensation_graph = condensation(graph.clone(), true);
 
