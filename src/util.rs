@@ -19,3 +19,10 @@ where
     rv.push_str("\n}");
     rv
 }
+
+pub fn truncate_after_last(s: &str, c: char) -> String {
+    match s.rfind(c) {
+        Some(index) => s[..=index].to_string(), // Include the character
+        None => s.to_string(),
+    }
+}

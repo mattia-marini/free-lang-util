@@ -1,5 +1,6 @@
-use crate::grammar::{Grammar, Production};
 use std::collections::{HashMap, HashSet, VecDeque};
+
+use crate::grammar::{grammar::Grammar, parse_structs::Production};
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Lr0Item<'a> {
