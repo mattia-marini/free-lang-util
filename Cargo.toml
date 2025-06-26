@@ -1,5 +1,5 @@
 [package]
-name = "latex-parsing-table-generator"
+name = "free-lang-util"
 version = "0.1.0"
 edition = "2024"
 

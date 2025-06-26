@@ -3,7 +3,7 @@ A tool for generating parsing tables and automaton of free grammars, written in 
 
 ## Usage
 ```bash
-Usage: latex-parsing-table-generator [OPTIONS] <--file <FILE>|--base-64 <BASE64>>
+Usage: free-lang-util [OPTIONS] <--file <FILE>|--base-64 <BASE64>>
 ```
 
 where `FILE` should be a valid path to a file containing a grammar with the same format used on [grammophone](https://mdaines.github.io/grammophone/#/), for instance:
