@@ -314,6 +314,34 @@ impl Grammar {
             self.productions.iter().map(|prod| prod.driver).collect();
         sorted_non_terms.dedup();
 
+        /* ######################### Grammar ######################### */
+        let mut productions_string = String::new();
+        productions_string.push_str("\\begin{align*}\n");
+        let mut productions_by_driver = HashMap::new();
+        for prod in self.productions.iter() {
+            if !productions_by_driver.contains_key(&prod.driver) {
+                productions_by_driver.insert(prod.driver, vec![]);
+            }
+            productions_by_driver
+                .get_mut(&prod.driver)
+                .unwrap()
+                .push(prod);
+        }
+        for driver in sorted_non_terms.iter() {
+            let mut bodies: Vec<String> = vec![];
+            for prod in productions_by_driver.get(driver).unwrap().iter() {
+                let formatted_body = if prod.body.is_empty() {
+                    "\\epsilon".to_string()
+                } else {
+                    prod.body.iter().collect()
+                };
+                bodies.push(formatted_body);
+            }
+            productions_string
+                .push_str(format!("{} &\\rightarrow {} \\\\\n", driver, bodies.join(" \\mid ")).as_str());
+        }
+        productions_string.push_str("\\end{align*}\n");
+
         /* ######################### lr0 Parsing table ######################### */
         let lr0_parsing_table_string = Self::generate_parsing_table_latex(
             self,
@@ -341,8 +369,16 @@ impl Grammar {
         );
 
         format!(
-            "%Lr0 parsing table\n{} \n\n %Slr1 parsing table\n{} \n\n %First-follow set\n{}",
-            lr0_parsing_table_string, slr1_parsing_table_string, first_follow_table_string
+            "
+% Grammar\n{} \n\n
+% Lr0 parsing table\n{} \n\n
+% Slr1 parsing table\n{} \n\n
+% First-follow set\n{}
+",
+            productions_string,
+            lr0_parsing_table_string,
+            slr1_parsing_table_string,
+            first_follow_table_string
         )
     }
 
