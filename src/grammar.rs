@@ -1,7 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
+use petgraph::adj::NodeIndex;
+use petgraph::algo::{condensation, toposort};
+use petgraph::visit::EdgeRef;
+use petgraph::{Direction, Graph};
+
 use crate::args::GrammarDecodeError;
 use crate::lr0::{Lr0Item, get_parsing_automaton};
+use crate::util::get_dot_from_petgraph;
 use std::collections::VecDeque;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -30,6 +36,23 @@ impl Production {
 
     pub fn as_lr0_item<'a>(&'a self) -> Lr0Item<'a> {
         Lr0Item::new(self)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FirstFollowSet {
+    first: HashSet<char>,
+    follow: HashSet<char>,
+    nullable: bool,
+}
+
+impl FirstFollowSet {
+    pub fn new() -> Self {
+        FirstFollowSet {
+            first: HashSet::new(),
+            follow: HashSet::new(),
+            nullable: false,
+        }
     }
 }
 
@@ -193,6 +216,45 @@ impl Grammar {
 
         rv.push_str("\\bottomrule\n");
         rv.push_str("\\end{tabular}\n");
+
+        rv.push_str("\n\n");
+
+        let first_follow_set = self.get_first_follow_table();
+
+        rv.push_str("\\begin{tabular}{cccc}\n");
+        rv.push_str("\\toprule\n");
+        rv.push_str("Symbol & First-set & Follow-set & Nullable\\\\\n");
+        rv.push_str("\\midrule\n");
+        for non_term in sorted_non_terms.iter() {
+            if let Some(set) = first_follow_set.get(non_term) {
+                let first_set_str = set
+                    .first
+                    .iter()
+                    .cloned()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",");
+                let follow_set_str: String = set
+                    .follow
+                    .iter()
+                    .cloned()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",");
+
+                let nullable_str = if set.nullable { "Yes" } else { "No" };
+                rv.push_str(
+                    format!(
+                        "{} & {} & {} & {}\\\\\n",
+                        non_term, first_set_str, follow_set_str, nullable_str
+                    )
+                    .as_str(),
+                );
+            }
+        }
+        rv.push_str("\\bottomrule\n");
+        rv.push_str("\\end{tabular}\n");
+
         rv
     }
 
@@ -255,6 +317,168 @@ impl Grammar {
         }
 
         rv
+    }
+
+    pub fn get_first_follow_table(&self) -> HashMap<char, FirstFollowSet> {
+        let mut first_follow_table = HashMap::new();
+        for non_term in &self.non_terms {
+            first_follow_table.insert(*non_term, FirstFollowSet::new());
+        }
+
+        // Nullables
+        let mut nullables = HashSet::new();
+        let mut new_nullables_count = 0;
+
+        for production in &self.productions {
+            if production.body.is_empty() {
+                nullables.insert(production.driver);
+                new_nullables_count += 1;
+            }
+        }
+
+        while new_nullables_count > 0 {
+            new_nullables_count = 0;
+            for production in &self.productions {
+                let body_len = production.body.len();
+                let nullables_in_body = production.body.iter().fold(0, |acc, el| {
+                    acc + if nullables.contains(el) { 1 } else { 0 }
+                });
+                if nullables_in_body == body_len && !nullables.contains(&production.driver) {
+                    nullables.insert(production.driver);
+                    new_nullables_count += 1;
+                }
+            }
+        }
+
+        for nullable in &nullables {
+            println!("Nullable: {}", nullable);
+            if let Some(set) = first_follow_table.get_mut(nullable) {
+                set.nullable = true;
+            }
+        }
+
+        //Firsts
+        let mut productions_by_driver: HashMap<char, Vec<&Production>> = HashMap::new();
+        for production in &self.productions {
+            if !productions_by_driver.contains_key(&production.driver) {
+                productions_by_driver.insert(production.driver, vec![]);
+            }
+            productions_by_driver
+                .get_mut(&production.driver)
+                .unwrap()
+                .push(production);
+        }
+
+        for (driver, production_set) in &productions_by_driver {
+            let mut curr_first_set = &mut first_follow_table.get_mut(&driver).unwrap().first;
+
+            for prod in production_set {
+                if let Some(first_terminal) = prod.body.iter().find(|symbol| symbol.is_lowercase())
+                {
+                    curr_first_set.insert(*first_terminal);
+                }
+            }
+        }
+
+        let mut first_graph = Graph::<char, ()>::new();
+        let mut node_indices = HashMap::new();
+
+        for non_term in &self.non_terms {
+            let idx = first_graph.add_node(*non_term);
+            node_indices.insert(*non_term, idx);
+        }
+
+        for prod in &self.productions {
+            for symbol in &prod.body {
+                if symbol.is_uppercase() {
+                    let node_from_idx = node_indices.get(&prod.driver).unwrap();
+                    let node_to_idx = node_indices.get(&symbol).unwrap();
+                    first_graph.add_edge(*node_from_idx, *node_to_idx, ());
+                }
+
+                if symbol.is_lowercase() || !nullables.contains(&symbol) {
+                    break;
+                }
+            }
+        }
+
+        println!("First Graph DOT:\n{}", get_dot_from_petgraph(&first_graph));
+
+        let condensation_graph = condensation(first_graph, true);
+
+        //REMOVE
+        let new_graph = condensation_graph.map(
+            |idx, payload| {
+                payload
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",")
+            },
+            |idx, payload| *payload,
+        );
+        println!(
+            "Condensation graph DOT:\n{}",
+            get_dot_from_petgraph(&new_graph)
+        );
+        //REMOVE
+
+        for condensed_nodes in condensation_graph.node_weights() {
+            let mut node_symbols = HashSet::new();
+            for symbol in condensed_nodes {
+                for first in first_follow_table.get(symbol).unwrap().first.iter() {
+                    node_symbols.insert(*first);
+                }
+            }
+            for symbol in condensed_nodes {
+                let curr_symbol_first_set = &mut first_follow_table.get_mut(symbol).unwrap().first;
+                for first in &node_symbols {
+                    curr_symbol_first_set.insert(*first);
+                }
+            }
+        }
+
+        let topological_order =
+            toposort(&condensation_graph, None).expect("Failed to compute topological order");
+        let wheights: Vec<String> = topological_order
+            .iter()
+            .map(|e| condensation_graph.node_weight(*e).unwrap())
+            .map(|e| {
+                e.iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",")
+            })
+            .collect();
+
+        println!("Topological order: {:?}", wheights);
+        let mut topological_sort_iter = topological_order.iter().rev();
+
+        let mut topological_node_position = HashMap::new();
+        for (pos, node_index) in topological_order.iter().enumerate() {
+            topological_node_position.insert(*node_index, pos);
+        }
+
+        for node_index in topological_sort_iter.rev() {
+            for edge in condensation_graph.edges_directed(*node_index, Direction::Outgoing) {
+                let node_to_idx = edge.target();
+
+                let new_firsts = first_follow_table
+                    .get(&condensation_graph.node_weight(node_to_idx).unwrap()[0])
+                    .unwrap()
+                    .first
+                    .clone();
+
+                for symbol in condensation_graph.node_weight(*node_index).unwrap() {
+                    let curr_symbol_first_set = first_follow_table.get_mut(&symbol).unwrap();
+                    for first in new_firsts.iter() {
+                        curr_symbol_first_set.first.insert(*first);
+                    }
+                }
+            }
+        }
+
+        first_follow_table
     }
 }
 

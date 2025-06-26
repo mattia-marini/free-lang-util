@@ -9,6 +9,7 @@ use std::io::{self, Read};
 mod args;
 mod grammar;
 mod lr0;
+mod util;
 use args::{Args, decode_grammar};
 
 fn main() {
