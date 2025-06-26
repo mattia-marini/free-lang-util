@@ -66,8 +66,8 @@ impl std::fmt::Display for Lr0Item<'_> {
 }
 
 pub struct Lr0Automaton<'a> {
-    nodes: Vec<Lr0AutomatonNode<'a>>,
-    edges: HashMap<usize, Vec<(usize, char)>>,
+    pub nodes: Vec<Lr0AutomatonNode<'a>>,
+    pub edges: HashMap<usize, Vec<(usize, char)>>,
 }
 
 impl Lr0Automaton<'_> {
@@ -137,8 +137,8 @@ impl<'a> std::fmt::Display for Lr0Automaton<'a> {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Lr0AutomatonNode<'a> {
-    kernel: Vec<Lr0Item<'a>>,
-    closure: Vec<Lr0Item<'a>>,
+    pub kernel: Vec<Lr0Item<'a>>,
+    pub closure: Vec<Lr0Item<'a>>,
 }
 
 impl<'a> Lr0AutomatonNode<'a> {

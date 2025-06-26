@@ -1,7 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::args::GrammarDecodeError;
-use crate::lr0::Lr0Item;
+use crate::lr0::{Lr0Item, get_parsing_automaton};
 use std::collections::VecDeque;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -14,13 +14,18 @@ pub struct Grammar {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Production {
+    pub index: Option<usize>,
     pub driver: char,
     pub body: Vec<char>,
 }
 
 impl Production {
     pub fn new(driver: char, body: Vec<char>) -> Self {
-        Production { driver, body }
+        Production {
+            index: None,
+            driver,
+            body,
+        }
     }
 
     pub fn as_lr0_item<'a>(&'a self) -> Lr0Item<'a> {
@@ -41,6 +46,7 @@ impl Grammar {
     pub fn add_production(&mut self, production: Production) {
         if self.starting_prod.is_none() {
             self.starting_prod = Some(Production {
+                index: None,
                 driver: '@',
                 body: vec![production.driver],
             });
@@ -115,13 +121,169 @@ impl Grammar {
             .filter(|item| !lr0_items.contains(item))
             .collect()
     }
+
+    pub fn generate_latex_string(&self) -> String {
+        let mut rv = String::new();
+        let parsing_table = self.get_lr0_parsing_table();
+
+        let mut sorted_terms: Vec<char> = self.terms.iter().cloned().collect();
+        sorted_terms.sort();
+        sorted_terms.push('$');
+
+        let mut sorted_non_terms: Vec<char> =
+            self.productions.iter().map(|prod| prod.driver).collect();
+        sorted_non_terms.dedup();
+
+        rv.push_str(
+            format!(
+                "\\begin{{tabular}}{{{}}}\n",
+                "c".repeat(sorted_terms.len() + sorted_non_terms.len() + 1)
+            )
+            .as_str(),
+        );
+        rv.push_str("\\toprule\n");
+        let header = format!(
+            "States & {} & {}\\\\\n",
+            sorted_terms
+                .iter()
+                .map(|c| if *c == '$' {
+                    "\\$".to_string()
+                } else {
+                    c.to_string()
+                })
+                .collect::<Vec<String>>()
+                .join(" & "),
+            sorted_non_terms
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<String>>()
+                .join(" & ")
+        );
+        rv.push_str(header.as_str());
+        rv.push_str("\\midrule\n");
+
+        for (node_index, row) in parsing_table.iter().enumerate() {
+            let mut row_str = vec![];
+            for term in sorted_terms.iter() {
+                if let Some(actions) = row.get(term) {
+                    let actions_str: Vec<String> =
+                        actions.iter().map(|action| action.to_string()).collect();
+                    // actions_str = actions_str.join(", ");
+                    // join("/");
+                    row_str.push(actions_str.join("/"));
+                } else {
+                    row_str.push(String::from(" "));
+                }
+            }
+
+            for non_term in sorted_non_terms.iter() {
+                if let Some(actions) = row.get(non_term) {
+                    let actions_str: Vec<String> =
+                        actions.iter().map(|action| action.to_string()).collect();
+                    // actions_str = actions_str.join(", ");
+                    // join("/");
+                    row_str.push(actions_str.join("/"));
+                } else {
+                    row_str.push(String::from(" "));
+                }
+            }
+
+            rv.push_str(format!("s{} & {} \\\\ \n", node_index, row_str.join(" & ")).as_str());
+        }
+
+        rv.push_str("\\bottomrule\n");
+        rv.push_str("\\end{tabular}\n");
+        rv
+    }
+
+    pub fn get_lr0_parsing_table(&self) -> Vec<HashMap<char, Vec<Action>>> {
+        let automaton = get_parsing_automaton(self);
+        let mut rv = vec![];
+        for (node_index, node) in automaton.nodes.iter().enumerate() {
+            let mut row = HashMap::new();
+
+            for term in self.terms.iter() {
+                row.insert(*term, vec![]);
+            }
+            row.insert('$', vec![]);
+            for non_term in self.non_terms.iter() {
+                row.insert(*non_term, vec![]);
+            }
+
+            // Populating shifs and gotos
+            if let Some(edges) = automaton.edges.get(&node_index) {
+                for (node_to, by_char) in edges {
+                    if by_char.is_uppercase() {
+                        row.get_mut(&by_char).unwrap().push(Action::Goto(*node_to));
+                    } else {
+                        row.get_mut(&by_char).unwrap().push(Action::Shift(*node_to));
+                    }
+                }
+            }
+
+            // Populating reduces
+            for item in &node.kernel {
+                if item.is_complete() {
+                    match item.production.index {
+                        Some(prod_index) => {
+                            for term in self.terms.iter() {
+                                row.get_mut(term).unwrap().push(Action::Reduce(prod_index));
+                            }
+                            row.get_mut(&'$').unwrap().push(Action::Reduce(prod_index));
+                        }
+                        None => row.get_mut(&'$').unwrap().push(Action::Acc),
+                    }
+                }
+            }
+            for item in &node.closure {
+                if item.is_complete() {
+                    match item.production.index {
+                        Some(prod_index) => {
+                            for term in self.terms.iter() {
+                                row.get_mut(term).unwrap().push(Action::Reduce(prod_index));
+                            }
+                        }
+                        None => row.get_mut(&'$').unwrap().push(Action::Acc),
+                    }
+                }
+            }
+
+            rv.push(row);
+            // for terminal in sorted_terms {
+            //     let v = automaton.edges.get(&node_index).unwrap();
+            // }
+        }
+
+        rv
+    }
+}
+
+pub enum Action {
+    Shift(usize),
+    Reduce(usize),
+    Acc,
+    Goto(usize),
+}
+
+impl std::fmt::Display for Action {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Action::Shift(to) => write!(f, "S{}", to),
+            Action::Reduce(prod_index) => write!(f, "R{}", prod_index),
+            Action::Goto(to) => write!(f, "{}", to),
+            Action::Acc => write!(f, "ACC"),
+        }
+    }
 }
 
 impl std::fmt::Display for Grammar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for production in &self.productions {
             let body_str: String = production.body.iter().collect();
-            writeln!(f, "{} -> {}", production.driver, body_str)?;
+            let prod_index = production
+                .index
+                .map_or("?".to_string(), |idx| idx.to_string());
+            writeln!(f, "{}\t{} -> {}", prod_index, production.driver, body_str)?;
         }
         Ok(())
     }
@@ -180,6 +342,7 @@ pub fn create_grammar_from_str(grammar_str: &String) -> Result<Grammar, GrammarD
                 }
             }
             let production = Production {
+                index: Some(grammar.productions.len()),
                 driver: driver_str.chars().next().unwrap(),
                 body,
             };

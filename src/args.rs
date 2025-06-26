@@ -83,10 +83,10 @@ pub fn decode_base_64(base64: String) -> Result<String, GrammarDecodeError> {
     })
 }
 
-pub fn decode_grammar(args: Args) -> Result<Grammar, GrammarDecodeError> {
-    let decoded_text = match (args.file, args.base64) {
-        (Some(file_path), None) => read_from_file(file_path),
-        (None, Some(base64)) => decode_base_64(base64),
+pub fn decode_grammar(args: &Args) -> Result<Grammar, GrammarDecodeError> {
+    let decoded_text = match (&args.file, &args.base64) {
+        (Some(file_path), None) => read_from_file(file_path.clone()),
+        (None, Some(base64)) => decode_base_64(base64.clone()),
         (None, None) => panic!("This should not be happening, clap should have handled this"),
         (Some(_), Some(_)) => {
             panic!("This should not be happening, clap should have handled this")

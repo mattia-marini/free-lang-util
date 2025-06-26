@@ -15,19 +15,23 @@ fn main() {
     let mut args = args::Args::parse();
     args.finalize();
 
-    println!("Parsed Arguments: {:?}", args);
-    // match decode_grammar(args) {
-    //     Ok(grammar) => {
-    //         println!("Decoded Grammar:\n{}", grammar);
-    //         // print_closures(&grammar);
-    //         let automaton = get_parsing_automaton(&grammar);
-    //         // println!("LR(0) Parsing Automaton:\n{}", automaton);
-    //         println!("{}", automaton.generate_dot_notation_string());
-    //     }
-    //     Err(err) => {
-    //         eprintln!("Error decoding grammar: {:?}", err);
-    //     }
-    // }
+    match decode_grammar(&args) {
+        Ok(grammar) => {
+            println!("Decoded Grammar:\n{}", grammar);
+            // print_closures(&grammar);
+            // println!("LR(0) Parsing Automaton:\n{}", automaton);
+            //
+            if args.latex {
+                println!("{}", grammar.generate_latex_string());
+            } else if args.dot {
+                let automaton = get_parsing_automaton(&grammar);
+                println!("{}", automaton.generate_dot_notation_string());
+            }
+        }
+        Err(err) => {
+            eprintln!("Error decoding grammar: {:?}", err);
+        }
+    }
 
     // println!("{}", decoded_text);
 }
