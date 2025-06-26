@@ -70,6 +70,48 @@ pub struct Lr0Automaton<'a> {
     edges: HashMap<usize, Vec<(usize, char)>>,
 }
 
+impl Lr0Automaton<'_> {
+    pub fn generate_dot_notation_string(&self) -> String {
+        let mut rv = String::new();
+        rv.push_str("digraph G {\nnode[shape=record]\n\n");
+        for (index, item) in self.nodes.iter().enumerate() {
+            let mut label_kernel = String::new();
+            let mut label_closure = String::new();
+            for prod in &item.kernel {
+                label_kernel.push_str(&format!("{}\\n", prod).replace("->", "→"));
+            }
+            for prod in &item.closure {
+                label_closure.push_str(&format!("{}\\n", prod).replace("->", "→"));
+            }
+            label_kernel = label_kernel.trim_end().to_string();
+            label_closure = label_closure.trim_end().to_string();
+
+            if label_closure.is_empty() {
+                rv.push_str(&format!(
+                    "{} [label=\"{{ {} | {} }}\"]\n",
+                    index, index, label_kernel
+                ));
+            } else {
+                rv.push_str(&format!(
+                    "{} [label=\"{{ {} | {} | {} }}\"]\n",
+                    index, index, label_kernel, label_closure
+                ));
+            }
+        }
+        rv.push_str("\n\n//nodes\n");
+        for (from, neighbours) in &self.edges {
+            for neighbour in neighbours {
+                let to = neighbour.0;
+                let by_char = neighbour.1;
+                rv.push_str(&format!("{} -> {} [label=\"{}\"]\n", from, to, by_char));
+            }
+        }
+        rv.push_str("}\n");
+
+        rv
+    }
+}
+
 impl<'a> std::fmt::Display for Lr0Automaton<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (index, node) in self.nodes.iter().enumerate() {

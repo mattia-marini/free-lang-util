@@ -10,17 +10,43 @@ use crate::grammar::{Grammar, create_grammar_from_str};
 #[command(group(
     ArgGroup::new("input")
         .required(true)
+        .multiple(false)
         .args(["file", "base64"]),
-))]
 
+    ),
+    group(
+        ArgGroup::new("output")
+            .required(false) 
+            .multiple(false)
+            .args(["latex", "dot"]),
+    )
+)]
 pub struct Args {
     /// Input file path
-    #[arg(short = 'f', long)]
+    #[arg(short = 'f', long, group = "input")]
     pub file: Option<String>,
 
     /// Base64 encoded input
-    #[arg(long = "base-64")]
+    #[arg(long = "base-64", group = "input")]
     pub base64: Option<String>,
+
+    /// Flag per generare output in formato LaTeX
+    #[arg(long, default_value_t = false, group = "output")]
+    pub latex: bool,
+
+    /// Flag per generare output in formato DOT
+    #[arg(long, default_value_t = false,  group = "output")]
+    pub dot: bool,
+}
+
+
+impl Args {
+    pub fn finalize(&mut self) {
+        // Se l'utente non ha specificato né --latex né --dot, abilito --latex di default
+        if !self.latex && !self.dot {
+            self.dot = true;
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

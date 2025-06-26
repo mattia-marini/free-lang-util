@@ -12,19 +12,22 @@ mod lr0;
 use args::{Args, decode_grammar};
 
 fn main() {
-    let args = args::Args::parse();
+    let mut args = args::Args::parse();
+    args.finalize();
 
-    match decode_grammar(args) {
-        Ok(grammar) => {
-            println!("Decoded Grammar:\n{}", grammar);
-            // print_closures(&grammar);
-            let automaton = get_parsing_automaton(&grammar);
-            println!("LR(0) Parsing Automaton:\n{}", automaton);
-        }
-        Err(err) => {
-            eprintln!("Error decoding grammar: {:?}", err);
-        }
-    }
+    println!("Parsed Arguments: {:?}", args);
+    // match decode_grammar(args) {
+    //     Ok(grammar) => {
+    //         println!("Decoded Grammar:\n{}", grammar);
+    //         // print_closures(&grammar);
+    //         let automaton = get_parsing_automaton(&grammar);
+    //         // println!("LR(0) Parsing Automaton:\n{}", automaton);
+    //         println!("{}", automaton.generate_dot_notation_string());
+    //     }
+    //     Err(err) => {
+    //         eprintln!("Error decoding grammar: {:?}", err);
+    //     }
+    // }
 
     // println!("{}", decoded_text);
 }
