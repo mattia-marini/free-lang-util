@@ -1,5 +1,5 @@
 # Parsing utils for free grammars
-A tool for generating parsing tables and automaton of free grammars, written in rust 🦀
+Tool to generate and visualize tables and automata for educational purposes, written in Rust. 🦀
 
 ## Usage
 ```bash
