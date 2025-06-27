@@ -65,6 +65,23 @@ impl Grammar {
             self.non_terms.insert(non_term);
         }
     }
+
+    /// Returns a vector of the grammar's terminals sorted as they would be in a parsing table,
+    /// i.e. in alphabetical order. Note that this does not include the end of input '$' symbol
+    pub fn get_sorted_terms(&self) -> Vec<char> {
+        let mut sorted_terms: Vec<char> = self.terms.iter().cloned().collect();
+        sorted_terms.sort();
+        sorted_terms
+    }
+
+    /// Returns a vector of the grammar's non terminals sorted as they would be in a parsing table,
+    /// i.e. in the order of production drivers specified in the grammar.
+    pub fn get_sorted_non_terms(&self) -> Vec<char> {
+        let mut sorted_non_terms: Vec<char> =
+            self.productions.iter().map(|prod| prod.driver).collect();
+        sorted_non_terms.dedup();
+        sorted_non_terms
+    }
 }
 
 impl std::fmt::Display for Grammar {

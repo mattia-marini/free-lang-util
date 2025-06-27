@@ -254,13 +254,10 @@ impl Grammar {
         let slr1_parsing_table =
             self.get_slr1_parsing_table(Some(&lr0_parsing_table), Some(&first_follow_set));
 
-        let mut sorted_terms: Vec<char> = self.terms.iter().cloned().collect();
-        sorted_terms.sort();
+        let mut sorted_terms: Vec<char> = self.get_sorted_terms();
         sorted_terms.push('$');
 
-        let mut sorted_non_terms: Vec<char> =
-            self.productions.iter().map(|prod| prod.driver).collect();
-        sorted_non_terms.dedup();
+        let mut sorted_non_terms: Vec<char> = self.get_sorted_non_terms();
 
         /* ######################### Grammophone link ######################### */
         let mut grammophone_link_string = String::new();

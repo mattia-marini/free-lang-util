@@ -194,6 +194,7 @@ pub fn get_parsing_automaton<'a>(grammar: &'a Grammar) -> Lr0Automaton<'a> {
         let mut outgoing_chars = vec![];
         let mut outgoing_chars_set: HashSet<char> = HashSet::new();
 
+        // Kernels characters are processed in the order they appear inside the kernel
         let curr_node = &automaton.nodes[curr_node_index];
         for item in curr_node.kernel.iter() {
             if let Some(next_symbol) = item.next_symbol() {
@@ -203,14 +204,26 @@ pub fn get_parsing_automaton<'a>(grammar: &'a Grammar) -> Lr0Automaton<'a> {
                 }
             }
         }
+
+        // Closure characters are processed in the order of parsing table columns
+        let sorted_symbols =
+            vec![grammar.get_sorted_terms(), grammar.get_sorted_non_terms()].concat();
+        let mut outgoing_chars_set_from_closure: HashSet<char> = HashSet::new();
+
         for item in curr_node.closure.iter() {
             if let Some(next_symbol) = item.next_symbol() {
                 if !outgoing_chars_set.contains(&next_symbol) {
-                    outgoing_chars.push(next_symbol);
                     outgoing_chars_set.insert(next_symbol);
+                    outgoing_chars_set_from_closure.insert(next_symbol);
                 }
             }
         }
+        for char in sorted_symbols {
+            if outgoing_chars_set_from_closure.contains(&char) {
+                outgoing_chars.push(char);
+            }
+        }
+
         // let x: Vec<Lr0Item<'a>> = curr_node.get_generated_kernel('a');
         let mut new_nodes: Vec<(usize, Lr0AutomatonNode<'a>)> = vec![];
         let mut new_edges: Vec<((usize, usize), char)> = vec![];
