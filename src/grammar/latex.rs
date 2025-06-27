@@ -5,6 +5,8 @@ use super::{
     parse_structs::{Action, FirstFollowSet},
 };
 
+use base64::Engine as _;
+
 #[derive(Clone, Debug)]
 pub struct LatexFormatOutputFormatDescriptor {
     pub grammophone_link: bool,
@@ -42,6 +44,39 @@ impl LatexFormatOutputFormatDescriptor {
 }
 
 impl Grammar {
+    fn generate_grammophone_link(&self, sorted_non_terms: &Vec<char>) -> String {
+        let mut grammar_str = String::new();
+
+        let mut productions_by_driver = HashMap::new();
+        for prod in self.productions.iter() {
+            if !productions_by_driver.contains_key(&prod.driver) {
+                productions_by_driver.insert(prod.driver, vec![]);
+            }
+            productions_by_driver
+                .get_mut(&prod.driver)
+                .unwrap()
+                .push(prod);
+        }
+        for driver in sorted_non_terms.iter() {
+            let mut bodies: Vec<String> = vec![];
+            for prod in productions_by_driver.get(driver).unwrap().iter() {
+                bodies.push(
+                    prod.body
+                        .iter()
+                        .map(|c| c.to_string())
+                        .collect::<Vec<String>>()
+                        .join(" "),
+                );
+            }
+            grammar_str.push_str(format!("{} -> {} .\n", driver, bodies.join(" | ")).as_str());
+        }
+
+        format!(
+            "https://mdaines.github.io/grammophone/?s={}",
+            base64::engine::general_purpose::STANDARD.encode(grammar_str)
+        )
+    }
+
     fn generate_parsing_table_latex(
         &self,
         parsing_table: &Vec<HashMap<char, Vec<Action>>>,
@@ -210,6 +245,15 @@ impl Grammar {
             self.productions.iter().map(|prod| prod.driver).collect();
         sorted_non_terms.dedup();
 
+        /* ######################### Grammophone link ######################### */
+        let mut grammophone_link_string = String::new();
+        if descriptor.grammophone_link {
+            grammophone_link_string = format!(
+                "\\href{{{}}}{{View on Grammophone}}",
+                self.generate_grammophone_link(&sorted_non_terms)
+            )
+        }
+
         /* ######################### Grammar ######################### */
         let mut productions_string = String::new();
         if descriptor.grammar_definition {
@@ -278,11 +322,13 @@ impl Grammar {
 
         format!(
             "
+% Grammophone link\n{} \n\n
 % Grammar\n{} \n\n
 % Lr0 parsing table\n{} \n\n
 % Slr1 parsing table\n{} \n\n
 % First-follow set\n{}
 ",
+            grammophone_link_string,
             productions_string,
             lr0_parsing_table_string,
             slr1_parsing_table_string,
