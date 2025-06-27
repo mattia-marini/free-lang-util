@@ -99,6 +99,7 @@ impl Grammar {
                     }
                 }
             }
+
             for item in &node.closure {
                 if item.is_complete() {
                     match item.production.index {
@@ -106,6 +107,7 @@ impl Grammar {
                             for term in self.terms.iter() {
                                 row.get_mut(term).unwrap().push(Action::Reduce(prod_index));
                             }
+                            row.get_mut(&'$').unwrap().push(Action::Reduce(prod_index));
                         }
                         None => row.get_mut(&'$').unwrap().push(Action::Acc),
                     }
