@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::lr0::get_parsing_automaton;
+
 use super::{
     grammar::Grammar,
     parse_structs::{Action, FirstFollowSet},
@@ -44,7 +46,11 @@ impl LatexFormatOutputFormatDescriptor {
 }
 
 impl Grammar {
-    fn generate_grammophone_link(&self, sorted_non_terms: &Vec<char>) -> String {
+    fn get_grammar_as_plain_text(&self) -> String {
+        let mut sorted_non_terms: Vec<char> =
+            self.productions.iter().map(|prod| prod.driver).collect();
+        sorted_non_terms.dedup();
+
         let mut grammar_str = String::new();
 
         let mut productions_by_driver = HashMap::new();
@@ -71,6 +77,17 @@ impl Grammar {
             grammar_str.push_str(format!("{} -> {} .\n", driver, bodies.join(" | ")).as_str());
         }
 
+        grammar_str
+    }
+
+    fn generate_graphviz_link(&self) -> String {
+        let automaton = get_parsing_automaton(&self);
+        let dot_string = automaton.generate_dot_notation_string();
+        urlencoding::encode(dot_string.as_str()).into_owned()
+    }
+
+    fn generate_grammophone_link(&self) -> String {
+        let mut grammar_str = self.get_grammar_as_plain_text();
         format!(
             "https://mdaines.github.io/grammophone/?s={}",
             base64::engine::general_purpose::STANDARD.encode(grammar_str)
@@ -250,8 +267,17 @@ impl Grammar {
         if descriptor.grammophone_link {
             grammophone_link_string = format!(
                 "\\href{{{}}}{{View on Grammophone}}",
-                self.generate_grammophone_link(&sorted_non_terms)
+                self.generate_grammophone_link()
             )
+        }
+
+        /* ######################### Graphviz link ######################### */
+        let mut graphviz_link_string = String::new();
+        if descriptor.graphviz_link {
+            graphviz_link_string = format!(
+                "\\href{{https://dreampuf.github.io/GraphvizOnline/?engine=dot#{}}}{{View on Graphviz}}",
+                self.generate_graphviz_link()
+            );
         }
 
         /* ######################### Grammar ######################### */
@@ -323,12 +349,14 @@ impl Grammar {
         format!(
             "
 % Grammophone link\n{} \n\n
+% Graphviz link\n{} \n\n
 % Grammar\n{} \n\n
 % Lr0 parsing table\n{} \n\n
 % Slr1 parsing table\n{} \n\n
 % First-follow set\n{}
 ",
             grammophone_link_string,
+            graphviz_link_string,
             productions_string,
             lr0_parsing_table_string,
             slr1_parsing_table_string,
